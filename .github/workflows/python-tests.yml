@@ -1,4 +1,4 @@
-name: Python tests
+name: CI - PyTest (Unit + UI)
 
 on:
   push:
@@ -7,14 +7,36 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'   # 3.11 also fine; keep one version
+
+      - name: Setup Chrome (for Selenium)
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-      - name: Run pytest
-        run: pytest --cov=. --cov-report=term-missing
+          # ensure selenium deps exist even if not in requirements.txt
+          pip install selenium webdriver-manager
+
+      # Run fast unit tests first (exclude UI by name/marker)
+      - name: Run unit tests
+        run: |
+          python -m pytest -q --maxfail=1 -k "not ui_smoke" --cov=. --cov-report=term-missing
+
+      # Run Selenium UI smoke tests (headless)
+      - name: Run UI smoke tests (Selenium headless)
+        env:
+          CHROME_PATH: ${{ env.CHROME_PATH }} # set by setup-chrome
+        run: |
+          python -m pytest -q -k "ui_smoke"
