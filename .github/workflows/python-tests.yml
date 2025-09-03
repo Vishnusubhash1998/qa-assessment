@@ -1,20 +1,58 @@
-name: Python tests
+name: CI - PyTest (Unit + UI)
 
 on:
   push:
   pull_request:
+  workflow_dispatch:  # allow manual runs from Actions tab
 
 jobs:
   test:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      # 1) Get your code
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2) Set up Python
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-      - name: Install deps
+          python-version: '3.12'   # keep in sync with your local env if you like
+
+      # 3) Install Google Chrome (needed for Selenium on Linux runners)
+      - name: Setup Chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+
+      # 4) Install dependencies
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-      - name: Run pytest
-        run: pytest --cov=. --cov-report=term-missing
+          # ensure UI deps exist even if they weren't listed (safe no-op if present)
+          pip install selenium webdriver-manager
+
+      # 5) Run fast unit tests (exclude UI smoke by name)
+      - name: Run unit tests
+        run: |
+          python -m pytest -q --maxfail=1 -k "not ui_smoke" --cov=. --cov-report=term-missing
+
+      # 6) Run Selenium UI smoke tests (headless)
+      - name: Run UI smoke tests
+        run: |
+          python -m pytest -q -k "ui_smoke"
+
+      # 7) (Optional) Produce coverage + JUnit report artifacts
+      - name: Coverage & JUnit reports
+        if: always()
+        run: |
+          mkdir -p reports
+          python -m pytest --cov=. --cov-report=xml:reports/coverage.xml --junitxml=reports/junit.xml
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: reports/
